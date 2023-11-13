@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper } from '@mui/material';
+import { addLoadToDatabase } from '../functions/database.js';
 
 const CustomTable = () => {
   const [rows, setRows] = useState([
@@ -53,7 +54,7 @@ const CustomTable = () => {
                 {row.delivery}
               </TableCell>
 
-              <TableCell align="right" onClick={() => toggleStatus(row.id)} style={{ cursor: 'pointer' }}>
+              <TableCell align="right" onClick={() => addLoadToDatabase()} style={{ cursor: 'pointer' }}>
                 {row.status}
               </TableCell>
             </TableRow>
