@@ -1,18 +1,35 @@
-import React, { useState } from 'react';
-import { Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField } from '@mui/material';
-import { addLoadToDatabase } from '../functions/database.js';
+import React, { useState, useEffect } from 'react';
+
+import { Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField, Alert } from '@mui/material';
+import { addLoadToDatabase, getLoads, updateLoadStatus } from '../functions/database.js';
+
+const DELIVERED = 'Delivered'
+const PICKED_UP = 'Picked Up'
+const IN_TRANSIT = 'In Transit'
+const BOOKED = 'Booked'
+
+const statusOptions = [
+  { status: BOOKED, color: 'red' },
+  { status: PICKED_UP, color: 'green' },
+  { status: IN_TRANSIT, color: 'yellow' },
+  { status: DELIVERED, color: 'black' },
+];
 
 const CustomTable = () => {
-  const [rows] = useState([
-    { id: 1, name: 'Item 1', pickup: 'Seattle at 7:30, 7/24/2023', delivery: 'Redmont at 7:30, 7/25/2023', status: 'Active' },
-    { id: 2, name: 'Item 2', pickup: 'Tacoma at 10:00, 7/27/2023', delivery: 'Olympia at 10:30, 7/30/2023', status: 'Inactive' },
-    { id: 3, name: 'Item 3', pickup: 'Seattle at 2:00, 7/15/2023', delivery: 'Spokane at 7:00, 7/20/2023', status: 'Inactive' },
-    { id: 4, name: 'Item 4', pickup: 'Auburn at 7:30, 7/24/2023', delivery: 'Everett at 3:00, 7/30/2023', status: 'Active' },
-    // ... Add more initial rows if needed
-  ]);
+  const [rows, setRows] = useState([]);
+
+  useEffect(() => {
+    const fetchLoads = async () => { // Get initial data
+      const loads = await getLoads();
+      setRows(loads);
+    };
+    fetchLoads();
+  }, []);
 
   const [open, setOpen] = useState(false);
   const [newLoad, setNewLoad] = useState({ name: '', pickup: '', delivery: '', comments: '' });
+  const [error, setError] = useState('');
+  const [loadingStatusId, setLoadingStatusId] = useState(null); // Track which load is being updated
 
   const handleClickOpen = () => {
     setOpen(true);
@@ -20,6 +37,7 @@ const CustomTable = () => {
 
   const handleClose = () => {
     setOpen(false);
+    setNewLoad({ name: '', pickup: '', delivery: '', comments: '' }); // Reset form
   };
 
   const handleInputChange = (e) => {
@@ -27,9 +45,58 @@ const CustomTable = () => {
   };
 
   const handleSubmit = async () => {
-    await addLoadToDatabase(newLoad);
-    handleClose();
-    // Optionally, update the table to show the new load
+    if (newLoad.name && newLoad.pickup && newLoad.delivery) { // Basic validation
+      newLoad.status = BOOKED;
+      await addLoadToDatabase(newLoad);
+      handleClose();
+      setRows([...rows, newLoad]); // Optimistically update UI
+    } else {
+      // Show validation error
+    }
+  };
+
+  const toggleStatus = async (id) => {
+    setLoadingStatusId(id); // Start loading for this id
+    const loadToUpdate = rows.find(row => row.id === id);
+    if (!loadToUpdate) return;
+
+    const currentStatusIndex = statusOptions.findIndex(s => s.status === loadToUpdate.status);
+    const nextStatusIndex = (currentStatusIndex + 1) % statusOptions.length;
+    const newStatus = statusOptions[nextStatusIndex].status;
+
+    try {
+      await updateLoadStatus(id, newStatus); // Update the status in the database
+
+      const updatedRows = rows.map(row => {
+        if (row.id === id) {
+          return { ...row, status: newStatus };
+        }
+        return row;
+      });
+
+      setRows(updatedRows);
+    } catch (error) {
+      console.error('Error updating load status:', error);
+      setError('Failed to update status. Please try again.'); // Set error message
+    } finally {
+      setLoadingStatusId(null); // End loading regardless of success or error
+    }
+  };
+
+  const getStatusStyle = (status, id) => {
+    const statusColor = statusOptions.find(s => s.status === status)?.color;
+    return {
+      backgroundColor: loadingStatusId === id ? 'grey' : statusColor, // Grey out if loading
+      color: statusColor === 'yellow' ? 'black' : 'white',
+      cursor: 'pointer',
+      width: '120px', // Set a fixed width
+      height: '40px', // Set a fixed height
+      padding: '5px 10px', // Optional, adjust for better text alignment
+      textAlign: 'center', // Center the text
+      whiteSpace: 'nowrap', // Prevents text wrapping
+      overflow: 'hidden', // Keeps the text within the button
+      textOverflow: 'ellipsis', // Adds an ellipsis if the text is too long
+    };
   };
 
   return (
@@ -51,7 +118,38 @@ const CustomTable = () => {
             value={newLoad.name}
             onChange={handleInputChange}
           />
-          {/* Add more input fields for pickup, delivery, comments */}
+          <TextField
+            margin="dense"
+            name="pickup"
+            label="Pickup"
+            type="text"
+            fullWidth
+            variant="standard"
+            value={newLoad.pickup}
+            onChange={handleInputChange}
+          />
+          <TextField
+            margin="dense"
+            name="delivery"
+            label="Delivery"
+            type="text"
+            fullWidth
+            variant="standard"
+            value={newLoad.delivery}
+            onChange={handleInputChange}
+          />
+          <TextField
+            margin="dense"
+            name="comments"
+            label="Comments"
+            type="text"
+            fullWidth
+            multiline
+            rows={4}
+            variant="standard"
+            value={newLoad.comments}
+            onChange={handleInputChange}
+          />
         </DialogContent>
         <DialogActions>
           <Button onClick={handleClose}>Cancel</Button>
@@ -62,35 +160,42 @@ const CustomTable = () => {
         <Table aria-label="simple table">
           <TableHead>
             <TableRow>
-              <TableCell>Name</TableCell>
-              <TableCell>Pickup</TableCell>
-              <TableCell>Delivery</TableCell>
-              <TableCell align="right">Status</TableCell>
+              <TableCell align="left">Name</TableCell>
+              <TableCell align="left">Pickup</TableCell>
+              <TableCell align="left">Delivery</TableCell>
+              <TableCell align="left">Status</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {rows.map((row) => (
               <TableRow key={row.id}>
-                <TableCell component="th" scope="row">
+                <TableCell align="left" component="th" scope="row">
                   {row.name}
                 </TableCell>
 
-                <TableCell component="th" scope="row">
+                <TableCell align="left" component="th" scope="row">
                   {row.pickup}
                 </TableCell>
 
-                <TableCell component="th" scope="row">
+                <TableCell align="left" component="th" scope="row">
                   {row.delivery}
                 </TableCell>
 
-                <TableCell align="right" onClick={() => addLoadToDatabase()} style={{ cursor: 'pointer' }}>
-                  {row.status}
+                <TableCell align="left" component="th" scope="row">
+                  <Button
+                    onClick={() => toggleStatus(row.id)}
+                    disabled={loadingStatusId === row.id} // Disable the button if loading
+                    style={getStatusStyle(row.status, row.id)}
+                  >
+                    {row.status}
+                  </Button>
                 </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       </TableContainer>
+      {error && <Alert severity="error">{error}</Alert>}
     </>
   );
 };
